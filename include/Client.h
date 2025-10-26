@@ -17,6 +17,7 @@
 namespace Client {
     class Client {
     private:
+
         struct ResolvedAddr {
             sockaddr_storage addr;
             socklen_t addr_len;
@@ -43,9 +44,8 @@ namespace Client {
 
         void closeConn() const;
 
-        void sendPacket(const IcmpPacket* packet, const ResolvedAddr &resolved_addr);
+        void sendPacket(const Packet::IcmpPacket* packet, const ResolvedAddr &resolved_addr);
 
-        void awaitConfirm(uint16_t sequenceNum);
 
     };
 } // client

@@ -63,34 +63,10 @@ namespace Client {
         close(sockfd_);
     }
 
-    void Client::sendPacket(const IcmpPacket* packet, const ResolvedAddr &resolved_addr) {
+    void Client::sendPacket(const Packet::IcmpPacket* packet, const ResolvedAddr &resolved_addr) {
         if (sendto(sockfd_, packet, sizeof(*packet), 0, reinterpret_cast<const sockaddr*>(&resolved_addr.addr), resolved_addr.addr_len) == -1) {
             perror("failed to send packet");
             closeConn();
-        }
-    }
-
-    void Client::awaitConfirm(uint16_t sequenceNum) {
-        uint8_t packetBuffer[sizeof(IcmpPacket)];
-        sockaddr_storage srcAddr{};
-        socklen_t srcAddrLen = sizeof(srcAddr);
-
-        auto received = recvfrom(sockfd_, packetBuffer, sizeof(packetBuffer), 0, reinterpret_cast<sockaddr*>(&srcAddr), &srcAddrLen);
-        if (received == -1) {
-            perror("receive failed");
-            return;
-        }
-
-        int ipHeaderLen = 0;
-
-        if (family_ == AF_INET) {
-            ipHeaderLen = (packetBuffer[0] & 0x0F) * 4;
-        }
-
-        auto* icmpHeader = reinterpret_cast<IcmpHeader*>(packetBuffer + ipHeaderLen);
-
-        if (icmpHeader->sequenceNum == sequenceNum) {
-
         }
     }
 
