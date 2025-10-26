@@ -2,10 +2,9 @@
 // Created by tadeas on 2025-10-21.
 //
 
-#include "../include/Packet.h"
-
 #include <cstdlib>
 #include <cstring>
+#include "../include/Packet.h"
 
 namespace Packet {
 
@@ -31,10 +30,23 @@ namespace Packet {
         return static_cast<uint16_t>(checksum);
     }
 
-    IcmpPacket IcmpPacket::parse(const uint8_t *data, size_t length) {
+    IcmpPacket IcmpPacket::parse(const uint8_t *data, const size_t length) {
+        IcmpPacket packet;
 
         size_t offset = 0;
-        const auto* header = reinterpret_cast<const struct IcmpHeader*>(data);
+        size_t stop = sizeof(packet.header);
+        std::memcpy(&packet.header + offset, data, stop);
+        offset += stop;
+        stop = sizeof(packet.protocol);
+
+        std::memcpy(&packet.protocol, data + offset, stop);
+        offset += stop;
+        stop = length;
+        if (length - stop > 0) {
+            std::memcpy(packet.data.data(), data + offset, stop);
+        }
+
+        return packet;
     }
 
     std::vector<uint8_t> IcmpPacket::serialize() const {
@@ -104,5 +116,23 @@ namespace Packet {
         uint16_t checksum = calculateChecksum(buffer.data(), buffer.size());
 
         header.checksum = checksum;
+    }
+
+    IcmpPacket IcmpPacket::createPacket(const uint8_t icmpType, const uint8_t code, const uint16_t id, const uint16_t icmpSequence, const uint8_t protocolType, const uint16_t protocolSequence, const uint8_t flags, const std::vector<uint8_t> &data) {
+        IcmpPacket packet;
+
+        packet.header.type = icmpType;
+        packet.header.code = code;
+        packet.header.id = htons(id);
+        packet.header.sequence = icmpSequence;
+
+        packet.protocol.type = protocolType;
+        packet.protocol.sequence = protocolSequence;
+        packet.protocol.flags = flags;
+        packet.protocol.payloadLength = htons(data.size());
+
+        packet.data = data;
+
+        return packet;
     }
 } //Packet
