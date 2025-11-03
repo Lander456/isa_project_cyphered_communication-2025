@@ -15,4 +15,8 @@ add_executable(projekt
         include/Packet.h
         include/Common.h
         src/Channel.cpp
-        include/Channel.h)
+        include/Channel.h
+        include/ClientFSM.h
+        include/ServerGreeterFSM.h
+        include/ServerReceiverFSM.h
+)
