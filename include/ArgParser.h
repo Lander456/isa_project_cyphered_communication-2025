@@ -27,7 +27,7 @@ namespace argparser {
          * method used to parse the command line args passed to the program
          * @return
          */
-        Config parse() const;
+        [[nodiscard]] Config parse() const;
 
         static void printHelp(const char* programName);
 
