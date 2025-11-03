@@ -118,7 +118,7 @@ namespace Packet {
         header.checksum = checksum;
     }
 
-    IcmpPacket IcmpPacket::createPacket(const uint8_t icmpType, const uint8_t code, const uint16_t id, const uint16_t icmpSequence, const uint8_t protocolType, const uint16_t protocolSequence, const uint8_t flags, const std::vector<uint8_t> &data) {
+    IcmpPacket IcmpPacket::createPacket(const uint8_t icmpType, const uint8_t code, const uint16_t id, const uint16_t icmpSequence, const PacketType protocolType, const std::vector<uint8_t> &data) {
         IcmpPacket packet;
 
         packet.header.type = icmpType;
@@ -127,8 +127,6 @@ namespace Packet {
         packet.header.sequence = icmpSequence;
 
         packet.protocol.type = protocolType;
-        packet.protocol.sequence = protocolSequence;
-        packet.protocol.flags = flags;
         packet.protocol.payloadLength = htons(data.size());
 
         packet.data = data;
