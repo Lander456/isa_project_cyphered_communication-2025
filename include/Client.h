@@ -12,11 +12,16 @@
 #include <string>
 #include <vector>
 #include <random>
+#include <unordered_map>
+
+#include "ClientFSM.h"
 #include "Packet.h"
+#include "Channel.h"
 
 namespace Client {
     class Client {
     private:
+        ClientFSM state_;
 
         struct ResolvedAddr {
             sockaddr_storage addr;
@@ -25,10 +30,15 @@ namespace Client {
         };
 
         std::vector<ResolvedAddr> resolvedAddrs_;
-        int sockfd_;
-        int family_;
         std::mt19937 rng_;
         std::uniform_int_distribution<int> dist_;
+        std::string hostnameArg_;
+        Channel::Channel* commsChannel_ = nullptr;
+        size_t sequenceNum_ = 0;
+        std::unordered_map<size_t, Packet::IcmpPacket> packetsWaitingForAck_;
+        std::string inputFile_;
+
+        void run();
 
         /**
          * method for resolving a given hostname's addresses (both IPv4 and IPv6)
@@ -38,7 +48,7 @@ namespace Client {
         static std::vector<ResolvedAddr> resolveHostname(const std::string &hostname);
 
     public:
-        Client();
+        explicit Client(std::string hostNameArg);
 
         void openConn(const ResolvedAddr &resolved_addr);
 

@@ -3,18 +3,152 @@
 //
 
 #include <cstdint>
+#include <utility>
 #include <unistd.h>
+#include <fstream>
+
 #include "../include/Packet.h"
 #include "../include/Client.h"
 
+#include <ranges>
+
 namespace Client {
 
-    Client::Client()
-        : rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), sockfd_(-1), family_(-1) {
+    Client::Client(std::string hostNameArg)
+        : state_(ClientFSM::INIT), rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), hostnameArg_(std::move(hostNameArg))
+    {
+        run();
+    }
+
+    void Client::run() {
+        bool run = true;
+        uint8_t response[1500];
+        int retransmitCount = 0;
+
+        while (run) {
+            std::vector<uint8_t> emptyData;
+            switch (state_) {
+                case ClientFSM::INIT: {
+                    resolvedAddrs_ = resolveHostname(hostnameArg_);
+                    state_ = ClientFSM::SEND_HELLO;
+                    break;
+                }
+                case ClientFSM::SEND_HELLO: {
+                    int currentAddr = 0;
+                    openConn(resolvedAddrs_[currentAddr]);
+                    auto packet = Packet::IcmpPacket::createPacket(8, 0, getpid(), sequenceNum_, PacketType::HELLO, emptyData);
+                    auto serializedPacket = packet.serialize();
+                    commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
+
+                    Packet::IcmpPacket parsedResponse = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), sizeof(commsChannel_->getRemoteAddress()));
+
+                    if (parsedResponse.protocol.type == PacketType::HELLO) {
+                        state_ = ClientFSM::AWAIT_RECEIVE;
+                        sequenceNum_++;
+                    } else {
+                        //TODO malformed packet response, error out
+                    }
+                    break;
+                }
+                case ClientFSM::AWAIT_RECEIVE: {
+                    if (commsChannel_->receivePacket(&response, sizeof(response), reinterpret_cast<sockaddr*>(&commsChannel_->getRemoteAddress()), sizeof(commsChannel_->getRemoteAddress())) < 0) {
+                        perror("socket");
+                        exit(1);
+                    }
+
+                    auto parsedResponse = Packet::IcmpPacket::parse(response, sizeof(response));
+
+                    if (parsedResponse.header.type == 0 && parsedResponse.header.code == 0 && parsedResponse.protocol.type == PacketType::RECEIVING) {
+                        auto packet = Packet::IcmpPacket::createPacket(0, 0, getpid(), parsedResponse.header.id, PacketType::ACK, emptyData);
+                        auto serializedPacket = packet.serialize();
+                        commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
+                        state_ = ClientFSM::SEND_DATA;
+                    } else {
+                        //TODO malformed packet response, error out
+                    }
+                    break;
+                }
+                case ClientFSM::SEND_DATA: {
+                    std::ifstream file(inputFile_, std::ios::binary);
+                    if (!file.is_open()) {
+                        std::cerr << "ERROR: Failed to open " << inputFile_ << std::endl;
+                        exit(1);
+                    }
+
+                    std::vector<uint8_t> buffer(CHUNK_SIZE);
+
+                    while (true) {
+                        file.read(reinterpret_cast<char*>(buffer->data()), buffer->size());
+                        std::streamsize bytesRead = file.gcount();
+
+                        if (bytesRead <= 0) {
+                            state_ = ClientFSM::TRANSMIT_DONE;
+                            break;
+                        }
+
+                        auto packet = Packet::IcmpPacket::createPacket(8, 0, getpid(), sequenceNum_, PacketType::DATA, buffer);
+                        auto serializedPacket = packet.serialize();
+
+                        commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
+                        packetsWaitingForAck_.insert({sequenceNum_, packet});
+                        sequenceNum_++;
+
+                        state_ = ClientFSM::AWAIT_ACK;
+                    }
+                    break;
+                }
+                case ClientFSM::AWAIT_ACK: {
+                    while (!packetsWaitingForAck_.empty()) {
+                        auto packet = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), sizeof(commsChannel_->getRemoteAddress()));
+                        if (packet.header.sequence == 0) {
+                            break;
+                        }
+                        if (packet.protocol.type == PacketType::ACK && packetsWaitingForAck_.contains(packet.header.sequence)) {
+                            packetsWaitingForAck_.erase(packet.header.sequence);
+                        }
+                    }
+
+                    if (!packetsWaitingForAck_.empty()) {
+                        if (retransmitCount < 3) {
+                            state_ = ClientFSM::RETRANSMIT;
+                        } else {
+                            state_ = ClientFSM::ERROR;
+                        }
+                    }
+
+                    retransmitCount = 0;
+                    break;
+                }
+
+                case ClientFSM::RETRANSMIT: {
+                    for (auto &packet: packetsWaitingForAck_ | std::views::values) {
+                        auto serializedPacket = packet.serialize();
+
+                        commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
+                    }
+
+                    retransmitCount++;
+                    state_ = ClientFSM::AWAIT_ACK;
+                    break;
+                }
+
+                case ClientFSM::SHUTDOWN: {
+                    run = false;
+                    break;
+                }
+                case ClientFSM::TRANSMIT_DONE: {
+                    break;
+                }
+                case ClientFSM::ERROR: {
+                    run = false;
+                    break;
+                }
+            }
+        }
     }
 
     std::vector<Client::ResolvedAddr> Client::resolveHostname(const std::string &hostname) {
-        std::vector<Client::ResolvedAddr> result;
+        std::vector<ResolvedAddr> result;
 
         struct addrinfo hints = {};
         struct addrinfo *res;
@@ -46,28 +180,17 @@ namespace Client {
     }
 
     void Client::openConn(const ResolvedAddr &resolved_addr) {
-        family_ = resolved_addr.family;
-        if (resolved_addr.family == AF_INET) {
-            sockfd_ = socket(resolved_addr.family, SOCK_RAW, IPPROTO_ICMP);
-        } else {
-            sockfd_ = socket(resolved_addr.family, SOCK_RAW, IPPROTO_ICMPV6);
-        }
-
-        if (sockfd_ == -1) {
-            std::cerr << "ERROR: failed to create socket" << std::endl;
-            exit(2);
-        }
+        commsChannel_ = new Channel::Channel(resolved_addr.family);
+        commsChannel_->setRemoteAddress(resolved_addr.addr);
+        commsChannel_->setRemoteAddressLength(resolved_addr.addr_len);
     }
 
     void Client::closeConn() const {
-        close(sockfd_);
+
     }
 
     void Client::sendPacket(const Packet::IcmpPacket* packet, const ResolvedAddr &resolved_addr) {
-        if (sendto(sockfd_, packet, sizeof(*packet), 0, reinterpret_cast<const sockaddr*>(&resolved_addr.addr), resolved_addr.addr_len) == -1) {
-            perror("failed to send packet");
-            closeConn();
-        }
+
     }
 
 
