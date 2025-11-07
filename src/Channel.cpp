@@ -21,8 +21,8 @@ namespace Channel {
 
         timeval tv{};
 
-        tv.tv_sec = 2;
-
+        tv.tv_sec = 0;
+        tv.tv_usec = 200000;
         setsockopt(sockfd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     }
 
@@ -40,7 +40,7 @@ namespace Channel {
         return recvfrom(sockfd_, buffer, len, 0, source, &sourceLength);
     }
 
-    Packet::IcmpPacket Channel::waitForResponse(uint16_t expectedId, sockaddr* source, socklen_t sourceLength) {
+    Packet::IcmpPacket Channel::waitForResponse(const uint16_t expectedId, sockaddr* source) {
         auto start = std::chrono::steady_clock::now();
 
         uint8_t buffer[1500];
@@ -53,12 +53,7 @@ namespace Channel {
                 return {};
             }
 
-            struct timeval tv{};
-            tv.tv_sec = 0;
-            tv.tv_usec = 200000;
-            setsockopt(sockfd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-            ssize_t received = recvfrom(sockfd_, buffer, 1500, 0, source, &sourceLength);
+            ssize_t received = recvfrom(sockfd_, buffer, 1500, 0, source, &remoteAddressLength_);
 
             if (received < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -68,7 +63,7 @@ namespace Channel {
                 }
             }
 
-            auto packet = Packet::IcmpPacket::parse(buffer, sizeof(buffer));
+            auto packet = Packet::IcmpPacket::parse(buffer, received);
 
             if (packet.header.id == expectedId) {
                 return packet;

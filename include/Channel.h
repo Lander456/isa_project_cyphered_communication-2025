@@ -8,9 +8,11 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <chrono>
-#include <thread>
 
 #include "Packet.h"
+
+#define CHUNK_SIZE 1500
+#define TIMEOUT_MS 1000
 
 namespace Channel {
     class Channel {
@@ -24,12 +26,13 @@ namespace Channel {
 
         ssize_t receivePacket(void* buffer, size_t len, sockaddr* source, socklen_t sourceLength) const;
 
-        Packet::IcmpPacket waitForResponse(uint16_t expectedId, sockaddr* source, socklen_t sourceLength);
+        Packet::IcmpPacket waitForResponse(uint16_t expectedId, sockaddr* source);
 
         [[nodiscard]] int family() const { return family_; }
 
         void setRemoteAddress(const sockaddr_storage& address) {remoteAddress_ = address;}
         void setRemoteAddressLength(socklen_t remoteAddressLength) {remoteAddressLength_ = remoteAddressLength;}
+        socklen_t getRemoteAddressLength() const {return remoteAddressLength_;}
         [[nodiscard]] sockaddr_storage& getRemoteAddress() {return remoteAddress_;}
 
     private:
@@ -37,6 +40,8 @@ namespace Channel {
         int family_;
         sockaddr_storage remoteAddress_;
         socklen_t remoteAddressLength_;
+
+        bool verifyChecksum(Packet::IcmpPacket packet);
     };
 } // Channel
 

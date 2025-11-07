@@ -13,7 +13,8 @@ enum class PacketType : uint8_t {
     ACK = 201,
     DATA = 202,
     RECEIVING = 203,
-    GOODBYE = 204
+    GOODBYE = 204,
+    ERROR = 205,
 };
 
 #pragma pack(push, 1)
@@ -60,7 +61,6 @@ namespace Packet {
 
         static IcmpPacket createPacket(uint8_t icmpType, uint8_t code, uint16_t id, uint16_t icmpSequence, PacketType protocolType, const std::vector<uint8_t> &data);
 
-    private:
         static uint16_t calculateChecksum(const void* data, size_t length);
     };
 } //Packet

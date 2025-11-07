@@ -29,6 +29,11 @@ namespace Client {
             int family;
         };
 
+        enum class packetSendingGrowth {
+            EXPONENTIAL_GROWTH,
+            STEADY_GROWTH,
+        };
+
         std::vector<ResolvedAddr> resolvedAddrs_;
         std::mt19937 rng_;
         std::uniform_int_distribution<int> dist_;
@@ -37,6 +42,7 @@ namespace Client {
         size_t sequenceNum_ = 0;
         std::unordered_map<size_t, Packet::IcmpPacket> packetsWaitingForAck_;
         std::string inputFile_;
+        packetSendingGrowth sendingGrowth_;
 
         void run();
 
@@ -51,11 +57,6 @@ namespace Client {
         explicit Client(std::string hostNameArg);
 
         void openConn(const ResolvedAddr &resolved_addr);
-
-        void closeConn() const;
-
-        void sendPacket(const Packet::IcmpPacket* packet, const ResolvedAddr &resolved_addr);
-
 
     };
 } // client

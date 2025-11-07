@@ -6,16 +6,14 @@
 #include <utility>
 #include <unistd.h>
 #include <fstream>
-
-#include "../include/Packet.h"
-#include "../include/Client.h"
-
 #include <ranges>
+
+#include "../include/Client.h"
 
 namespace Client {
 
     Client::Client(std::string hostNameArg)
-        : state_(ClientFSM::INIT), rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), hostnameArg_(std::move(hostNameArg))
+        : state_(ClientFSM::INIT), rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), hostnameArg_(std::move(hostNameArg)), sendingGrowth_(packetSendingGrowth::EXPONENTIAL_GROWTH)
     {
         run();
     }
@@ -24,6 +22,7 @@ namespace Client {
         bool run = true;
         uint8_t response[1500];
         int retransmitCount = 0;
+        int sendAmt = 1;
 
         while (run) {
             std::vector<uint8_t> emptyData;
@@ -40,13 +39,18 @@ namespace Client {
                     auto serializedPacket = packet.serialize();
                     commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
 
-                    Packet::IcmpPacket parsedResponse = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), sizeof(commsChannel_->getRemoteAddress()));
+                    Packet::IcmpPacket parsedResponse = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), commsChannel_->getRemoteAddressLength());
+
+                    if (parsedResponse.header.checksum == 0) {
+                        currentAddr++;
+                        break;
+                    }
 
                     if (parsedResponse.protocol.type == PacketType::HELLO) {
                         state_ = ClientFSM::AWAIT_RECEIVE;
                         sequenceNum_++;
                     } else {
-                        //TODO malformed packet response, error out
+                        state_ = ClientFSM::ERROR;
                     }
                     break;
                 }
@@ -59,12 +63,12 @@ namespace Client {
                     auto parsedResponse = Packet::IcmpPacket::parse(response, sizeof(response));
 
                     if (parsedResponse.header.type == 0 && parsedResponse.header.code == 0 && parsedResponse.protocol.type == PacketType::RECEIVING) {
-                        auto packet = Packet::IcmpPacket::createPacket(0, 0, getpid(), parsedResponse.header.id, PacketType::ACK, emptyData);
+                        auto packet = Packet::IcmpPacket::createPacket(0, 0, getpid(), parsedResponse.header.sequence, PacketType::ACK, emptyData);
                         auto serializedPacket = packet.serialize();
                         commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
                         state_ = ClientFSM::SEND_DATA;
                     } else {
-                        //TODO malformed packet response, error out
+                        state_ = ClientFSM::ERROR;
                     }
                     break;
                 }
@@ -77,8 +81,8 @@ namespace Client {
 
                     std::vector<uint8_t> buffer(CHUNK_SIZE);
 
-                    while (true) {
-                        file.read(reinterpret_cast<char*>(buffer->data()), buffer->size());
+                    for (int i = 0; i < sendAmt; i++) {
+                        file.read(reinterpret_cast<char*>(buffer.data()), CHUNK_SIZE * sizeof(uint8_t));
                         std::streamsize bytesRead = file.gcount();
 
                         if (bytesRead <= 0) {
@@ -92,14 +96,16 @@ namespace Client {
                         commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
                         packetsWaitingForAck_.insert({sequenceNum_, packet});
                         sequenceNum_++;
-
-                        state_ = ClientFSM::AWAIT_ACK;
                     }
+
+                    state_ = ClientFSM::AWAIT_ACK;
+
                     break;
                 }
+
                 case ClientFSM::AWAIT_ACK: {
                     while (!packetsWaitingForAck_.empty()) {
-                        auto packet = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), sizeof(commsChannel_->getRemoteAddress()));
+                        auto packet = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), commsChannel_->getRemoteAddressLength());
                         if (packet.header.sequence == 0) {
                             break;
                         }
@@ -109,10 +115,23 @@ namespace Client {
                     }
 
                     if (!packetsWaitingForAck_.empty()) {
+
+                        sendAmt = sendAmt/2;
+
+                        if (sendAmt == 0) {
+                            sendAmt++;
+                        }
+
                         if (retransmitCount < 3) {
                             state_ = ClientFSM::RETRANSMIT;
                         } else {
                             state_ = ClientFSM::ERROR;
+                        }
+                    } else {
+                        if (sendingGrowth_ == packetSendingGrowth::EXPONENTIAL_GROWTH) {
+                            sendAmt *= 2;
+                        } else {
+                            sendAmt += 2;
                         }
                     }
 
@@ -121,6 +140,11 @@ namespace Client {
                 }
 
                 case ClientFSM::RETRANSMIT: {
+
+                    if (sendingGrowth_ == packetSendingGrowth::EXPONENTIAL_GROWTH) {
+                        sendingGrowth_ = packetSendingGrowth::STEADY_GROWTH;
+                    }
+
                     for (auto &packet: packetsWaitingForAck_ | std::views::values) {
                         auto serializedPacket = packet.serialize();
 
@@ -133,14 +157,29 @@ namespace Client {
                 }
 
                 case ClientFSM::SHUTDOWN: {
+                    //TODO graceful shutdown
                     run = false;
                     break;
                 }
                 case ClientFSM::TRANSMIT_DONE: {
+
+                    auto packet = Packet::IcmpPacket::createPacket(8, 0, getpid(), sequenceNum_, PacketType::GOODBYE, emptyData);
+                    sequenceNum_++;
+                    auto serializedPacket = packet.serialize();
+
+                    commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
+
+                    state_ = ClientFSM::SHUTDOWN;
                     break;
                 }
                 case ClientFSM::ERROR: {
-                    run = false;
+                    auto packet = Packet::IcmpPacket::createPacket(8, 0, getpid(), sequenceNum_, PacketType::ERROR, emptyData);
+                    sequenceNum_++;
+                    auto serializedPacket = packet.serialize();
+
+                    commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size(), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
+
+                    state_ = ClientFSM::SHUTDOWN;
                     break;
                 }
             }
@@ -184,15 +223,4 @@ namespace Client {
         commsChannel_->setRemoteAddress(resolved_addr.addr);
         commsChannel_->setRemoteAddressLength(resolved_addr.addr_len);
     }
-
-    void Client::closeConn() const {
-
-    }
-
-    void Client::sendPacket(const Packet::IcmpPacket* packet, const ResolvedAddr &resolved_addr) {
-
-    }
-
-
-
 } // client
