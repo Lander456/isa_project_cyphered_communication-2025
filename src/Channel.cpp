@@ -9,7 +9,7 @@
 
 namespace Channel {
     Channel::Channel(const int family)
-    : family_(family), remoteAddress_({}) {
+    : family_(family), remoteAddress_({}), remoteAddressLength_(sizeof(remoteAddress_)) {
         if (family_ == AF_INET) {
             sockfd_ = socket(family_, SOCK_RAW, IPPROTO_ICMP);
         } else {
@@ -58,15 +58,40 @@ namespace Channel {
             if (received < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     continue;
-                } else {
-                    return {};
                 }
+                return {};
             }
 
             auto packet = Packet::IcmpPacket::parse(buffer, received);
 
-            if (packet.header.id == expectedId) {
+            if (packet.icmpHeader.id == expectedId) {
                 return packet;
+            }
+        }
+    }
+
+    bool Channel::verifyChecksum(const Packet::IcmpPacket& packet) {
+        return Packet::IcmpPacket::calculateChecksum(&packet.data[0], packet.protocol.payloadLength) == packet.icmpHeader.checksum;
+    }
+
+    Packet::IcmpPacket Channel::listen() {
+        uint8_t buffer[1500];
+
+        while(true) {
+            const ssize_t received = recvfrom(sockfd_, buffer, sizeof(buffer), 0, reinterpret_cast<struct sockaddr *>(&remoteAddress_), &remoteAddressLength_);
+
+            if (received < 0) {
+                perror("recv");
+                break;
+            }
+
+            Packet::IcmpPacket packet = Packet::IcmpPacket::parse(buffer, received);
+
+            if (packet.icmpHeader.checksum != 0) {
+                if (verifyChecksum(packet)) {
+                    return packet;
+                }
+                return {};
             }
         }
     }

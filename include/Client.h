@@ -5,10 +5,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include <netdb.h>
 #include <arpa/inet.h>
-#include <cstring>
-#include <iostream>
 #include <string>
 #include <vector>
 #include <random>
@@ -21,7 +18,6 @@
 namespace Client {
     class Client {
     private:
-        ClientFSM state_;
 
         struct ResolvedAddr {
             sockaddr_storage addr;
@@ -34,6 +30,8 @@ namespace Client {
             STEADY_GROWTH,
         };
 
+        ClientFSM state_;
+        bool transmitted_;
         std::vector<ResolvedAddr> resolvedAddrs_;
         std::mt19937 rng_;
         std::uniform_int_distribution<int> dist_;

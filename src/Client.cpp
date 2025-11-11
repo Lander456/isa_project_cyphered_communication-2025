@@ -7,21 +7,20 @@
 #include <unistd.h>
 #include <fstream>
 #include <ranges>
+#include <iostream>
+#include <cstring>
 
 #include "../include/Client.h"
 
 namespace Client {
 
     Client::Client(std::string hostNameArg)
-        : state_(ClientFSM::INIT), rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), hostnameArg_(std::move(hostNameArg)), sendingGrowth_(packetSendingGrowth::EXPONENTIAL_GROWTH)
-    {
-        run();
-    }
+        : state_(ClientFSM::INIT), transmitted_(false), rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), hostnameArg_(std::move(hostNameArg)), sendingGrowth_(packetSendingGrowth::EXPONENTIAL_GROWTH) {}
 
     void Client::run() {
         bool run = true;
-        uint8_t response[1500];
         int retransmitCount = 0;
+        int currentAddr = 0;
         int sendAmt = 1;
 
         while (run) {
@@ -33,15 +32,14 @@ namespace Client {
                     break;
                 }
                 case ClientFSM::SEND_HELLO: {
-                    int currentAddr = 0;
                     openConn(resolvedAddrs_[currentAddr]);
                     auto packet = Packet::IcmpPacket::createPacket(8, 0, getpid(), sequenceNum_, PacketType::HELLO, emptyData);
                     auto serializedPacket = packet.serialize();
                     commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
 
-                    Packet::IcmpPacket parsedResponse = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), commsChannel_->getRemoteAddressLength());
+                    Packet::IcmpPacket parsedResponse = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()));
 
-                    if (parsedResponse.header.checksum == 0) {
+                    if (parsedResponse.icmpHeader.checksum == 0) {
                         currentAddr++;
                         break;
                     }
@@ -55,15 +53,10 @@ namespace Client {
                     break;
                 }
                 case ClientFSM::AWAIT_RECEIVE: {
-                    if (commsChannel_->receivePacket(&response, sizeof(response), reinterpret_cast<sockaddr*>(&commsChannel_->getRemoteAddress()), sizeof(commsChannel_->getRemoteAddress())) < 0) {
-                        perror("socket");
-                        exit(1);
-                    }
+                    auto receivedPacket = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()));
 
-                    auto parsedResponse = Packet::IcmpPacket::parse(response, sizeof(response));
-
-                    if (parsedResponse.header.type == 0 && parsedResponse.header.code == 0 && parsedResponse.protocol.type == PacketType::RECEIVING) {
-                        auto packet = Packet::IcmpPacket::createPacket(0, 0, getpid(), parsedResponse.header.sequence, PacketType::ACK, emptyData);
+                    if (receivedPacket.icmpHeader.type == 8 && receivedPacket.icmpHeader.code == 0 && receivedPacket.protocol.type == PacketType::RECEIVING) {
+                        auto packet = Packet::IcmpPacket::createPacket(0, 0, getpid(), receivedPacket.icmpHeader.sequence, PacketType::ACK, emptyData);
                         auto serializedPacket = packet.serialize();
                         commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
                         state_ = ClientFSM::SEND_DATA;
@@ -86,7 +79,8 @@ namespace Client {
                         std::streamsize bytesRead = file.gcount();
 
                         if (bytesRead <= 0) {
-                            state_ = ClientFSM::TRANSMIT_DONE;
+                            transmitted_ = true;
+                            state_ = ClientFSM::AWAIT_ACK;
                             break;
                         }
 
@@ -105,12 +99,17 @@ namespace Client {
 
                 case ClientFSM::AWAIT_ACK: {
                     while (!packetsWaitingForAck_.empty()) {
-                        auto packet = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()), commsChannel_->getRemoteAddressLength());
-                        if (packet.header.sequence == 0) {
-                            break;
+                        auto packet = commsChannel_->waitForResponse(getpid(), reinterpret_cast<sockaddr *>(&commsChannel_->getRemoteAddress()));
+
+                        if (packet.icmpHeader.checksum == 0) {
+                            continue;
                         }
-                        if (packet.protocol.type == PacketType::ACK && packetsWaitingForAck_.contains(packet.header.sequence)) {
-                            packetsWaitingForAck_.erase(packet.header.sequence);
+
+                        if (packet.protocol.type == PacketType::ACK && packetsWaitingForAck_.contains(packet.icmpHeader.sequence)) {
+                            packetsWaitingForAck_.erase(packet.icmpHeader.sequence);
+
+                        } else if (packet.protocol.type == PacketType::TRANSMISSION_HANDOVER) {
+                            break;
                         }
                     }
 
@@ -132,6 +131,12 @@ namespace Client {
                             sendAmt *= 2;
                         } else {
                             sendAmt += 2;
+                        }
+
+                        if (transmitted_) {
+                            state_ = ClientFSM::TRANSMIT_DONE;
+                        } else {
+                            state_ = ClientFSM::SEND_DATA;
                         }
                     }
 
@@ -189,8 +194,8 @@ namespace Client {
     std::vector<Client::ResolvedAddr> Client::resolveHostname(const std::string &hostname) {
         std::vector<ResolvedAddr> result;
 
-        struct addrinfo hints = {};
-        struct addrinfo *res;
+        addrinfo hints = {};
+        addrinfo *res;
 
         hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_RAW;
@@ -202,7 +207,7 @@ namespace Client {
             exit(EXIT_FAILURE);
         }
 
-        for (struct addrinfo *p = res; p != nullptr; p = p->ai_next) {
+        for (const addrinfo *p = res; p != nullptr; p = p->ai_next) {
             ResolvedAddr addr{};
 
             if (p->ai_addrlen <= sizeof(sockaddr_storage)) {

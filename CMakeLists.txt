@@ -17,6 +17,5 @@ add_executable(projekt
         src/Channel.cpp
         include/Channel.h
         include/ClientFSM.h
-        include/ServerGreeterFSM.h
-        include/ServerReceiverFSM.h
+        include/ServerFSM.h
 )

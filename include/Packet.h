@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <netinet/in.h>
+#include <netinet/ip.h>
 
 enum class PacketType : uint8_t {
     HELLO = 200,
@@ -15,6 +16,7 @@ enum class PacketType : uint8_t {
     RECEIVING = 203,
     GOODBYE = 204,
     ERROR = 205,
+    TRANSMISSION_HANDOVER = 206
 };
 
 #pragma pack(push, 1)
@@ -45,7 +47,9 @@ namespace Packet {
     class IcmpPacket {
     public:
 
-        icmpHeader header{};
+        ip ipHeader{};
+
+        icmpHeader icmpHeader{};
 
         protocolInfo protocol{};
 
@@ -53,7 +57,7 @@ namespace Packet {
 
         void getChecksumIPv4();
 
-        void getChecksumIPv6(const in6_addr &source, in6_addr &destination);
+        void getChecksumIPv6(const in6_addr &source, const in6_addr &destination);
 
         [[nodiscard]] std::vector<uint8_t> serialize() const;
 

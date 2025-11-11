@@ -4,57 +4,74 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <unistd.h>
+
 #include "../include/Packet.h"
 
 namespace Packet {
 
     uint16_t IcmpPacket::calculateChecksum(const void* data, size_t length) {
-        const auto* dataPtr = static_cast<const uint16_t*>(data);
+        const auto* bytes = static_cast<const uint8_t*>(data);
         uint32_t checksum = 0;
 
         while (length > 1) {
-            checksum += *dataPtr++;
+            checksum += (bytes[0] << 8) | bytes[1];
+            bytes += 2;
             length -= 2;
         }
-
         if (length == 1) {
-            uint16_t oddByte = 0;
-            *reinterpret_cast<uint8_t*>(&oddByte) = *reinterpret_cast<const uint8_t*>(dataPtr);
-            checksum += oddByte;
+            checksum += bytes[0] << 8;
         }
-
-        while (checksum >> 16) {
+        while (checksum >> 16)
             checksum = (checksum & 0xFFFF) + (checksum >> 16);
-        }
 
-        return static_cast<uint16_t>(checksum);
+        return static_cast<uint16_t>(~checksum);
     }
 
     IcmpPacket IcmpPacket::parse(const uint8_t *data, const size_t length) {
         IcmpPacket packet;
 
-        size_t offset = 0;
-        size_t stop = sizeof(packet.header);
-        std::memcpy(&packet.header + offset, data, stop);
-        offset += stop;
-        stop = sizeof(packet.protocol);
+        if (length < sizeof(packet.ipHeader) + sizeof(packet.icmpHeader) + sizeof(packet.protocol)) {
+            return {};
+        }
 
-        std::memcpy(&packet.protocol, data + offset, stop);
+        size_t offset = 0;
+        size_t stop = sizeof(packet.ipHeader);
+        std::memcpy(&packet.ipHeader, data, stop);
+        packet.ipHeader.ip_len = ntohs(packet.ipHeader.ip_len);
+        packet.ipHeader.ip_id = ntohs(packet.ipHeader.ip_id);
+        packet.ipHeader.ip_off = ntohs(packet.ipHeader.ip_off);
+        packet.ipHeader.ip_sum = ntohs(packet.ipHeader.ip_sum);
+        packet.ipHeader.ip_src.s_addr = ntohl(packet.ipHeader.ip_src.s_addr);
+        packet.ipHeader.ip_dst.s_addr = ntohl(packet.ipHeader.ip_dst.s_addr);
+
         offset += stop;
-        stop = length;
-        if (length - stop > 0) {
-            std::memcpy(packet.data.data(), data + offset, stop);
+        stop = sizeof(packet.icmpHeader);
+        std::memcpy(&packet.icmpHeader, data, stop);
+        packet.icmpHeader.id = ntohs(packet.icmpHeader.id);
+
+        offset += stop;
+
+        stop = sizeof(packet.protocol);
+        std::memcpy(&packet.protocol, data + offset, stop);
+        packet.protocol.payloadLength = ntohs(packet.protocol.payloadLength);
+        offset += stop;
+
+        size_t remaining = length - offset;
+        if (remaining > 0) {
+            packet.data.resize(remaining);
+            std::memcpy(packet.data.data(), data + offset, remaining);
         }
 
         return packet;
     }
 
     std::vector<uint8_t> IcmpPacket::serialize() const {
-        std::vector<uint8_t> buffer(sizeof(header) + sizeof(protocol) + data.size());
+        std::vector<uint8_t> buffer(sizeof(icmpHeader) + sizeof(protocol) + data.size());
 
         size_t offset = 0;
-        std::memcpy(buffer.data() + offset, &header, sizeof(header));
-        offset += sizeof(header);
+        std::memcpy(buffer.data() + offset, &icmpHeader, sizeof(icmpHeader));
+        offset += sizeof(icmpHeader);
 
         std::memcpy(buffer.data() + offset, &protocol, sizeof(protocol));
         offset += sizeof(protocol);
@@ -67,12 +84,12 @@ namespace Packet {
     }
 
     void IcmpPacket::getChecksumIPv4() {
-        header.checksum = 0;
+        icmpHeader.checksum = 0;
 
-        std::vector<uint8_t> buffer(sizeof(header) + sizeof(protocol) + data.size());
+        std::vector<uint8_t> buffer(sizeof(icmpHeader) + sizeof(protocol) + data.size());
         size_t offset = 0;
-        std::memcpy(buffer.data() + offset, &header, sizeof(header));
-        offset += sizeof(header);
+        std::memcpy(buffer.data() + offset, &icmpHeader, sizeof(icmpHeader));
+        offset += sizeof(icmpHeader);
 
         std::memcpy(buffer.data() + offset, &protocol, sizeof(protocol));
         offset += sizeof(protocol);
@@ -83,17 +100,17 @@ namespace Packet {
 
         uint16_t checksum = calculateChecksum(buffer.data(), buffer.size());
 
-        header.checksum = checksum;
+        icmpHeader.checksum = checksum;
     }
 
-    void IcmpPacket::getChecksumIPv6(const in6_addr &source, in6_addr &destination) {
-        header.checksum = 0;
+    void IcmpPacket::getChecksumIPv6(const in6_addr &source, const in6_addr &destination) {
+        icmpHeader.checksum = 0;
 
-        std::vector<uint8_t> icmpData(sizeof(header) + sizeof(protocol) + data.size());
+        std::vector<uint8_t> icmpData(sizeof(icmpHeader) + sizeof(protocol) + data.size());
         size_t offset = 0;
 
-        std::memcpy(icmpData.data() + offset, &header, sizeof(header));
-        offset += sizeof(header);
+        std::memcpy(icmpData.data() + offset, &icmpHeader, sizeof(icmpHeader));
+        offset += sizeof(icmpHeader);
 
         std::memcpy(icmpData.data() + offset, &protocol, sizeof(protocol));
         offset += sizeof(protocol);
@@ -106,25 +123,25 @@ namespace Packet {
 
         pseudo.source = source;
         pseudo.destination = destination;
-        pseudo.length = htonl(data.size());
+        pseudo.length = htonl(sizeof(icmpHeader) + sizeof(protocol) + data.size());
         pseudo.nextHeader = IPPROTO_ICMPV6;
 
         std::vector<uint8_t> buffer(sizeof(pseudo) + icmpData.size());
         std::memcpy(buffer.data(), &pseudo, sizeof(pseudo));
         std::memcpy(buffer.data() + sizeof(pseudo), icmpData.data(), icmpData.size());
 
-        uint16_t checksum = calculateChecksum(buffer.data(), buffer.size());
+        const uint16_t checksum = calculateChecksum(buffer.data(), buffer.size());
 
-        header.checksum = checksum;
+        icmpHeader.checksum = checksum;
     }
 
     IcmpPacket IcmpPacket::createPacket(const uint8_t icmpType, const uint8_t code, const uint16_t id, const uint16_t icmpSequence, const PacketType protocolType, const std::vector<uint8_t> &data) {
         IcmpPacket packet;
 
-        packet.header.type = icmpType;
-        packet.header.code = code;
-        packet.header.id = htons(id);
-        packet.header.sequence = icmpSequence;
+        packet.icmpHeader.type = icmpType;
+        packet.icmpHeader.code = code;
+        packet.icmpHeader.id = htons(id);
+        packet.icmpHeader.sequence = htons(icmpSequence);
 
         packet.protocol.type = protocolType;
         packet.protocol.payloadLength = htons(data.size());

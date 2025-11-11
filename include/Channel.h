@@ -32,8 +32,10 @@ namespace Channel {
 
         void setRemoteAddress(const sockaddr_storage& address) {remoteAddress_ = address;}
         void setRemoteAddressLength(socklen_t remoteAddressLength) {remoteAddressLength_ = remoteAddressLength;}
-        socklen_t getRemoteAddressLength() const {return remoteAddressLength_;}
+        [[nodiscard]] socklen_t getRemoteAddressLength() const {return remoteAddressLength_;}
         [[nodiscard]] sockaddr_storage& getRemoteAddress() {return remoteAddress_;}
+
+        Packet::IcmpPacket listen();
 
     private:
         int sockfd_{-1};
@@ -41,7 +43,7 @@ namespace Channel {
         sockaddr_storage remoteAddress_;
         socklen_t remoteAddressLength_;
 
-        bool verifyChecksum(Packet::IcmpPacket packet);
+        static bool verifyChecksum(const Packet::IcmpPacket& packet);
     };
 } // Channel
 
