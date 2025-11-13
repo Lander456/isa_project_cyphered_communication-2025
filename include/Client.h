@@ -38,11 +38,11 @@ namespace Client {
         std::string hostnameArg_;
         Channel::Channel* commsChannel_ = nullptr;
         size_t sequenceNum_ = 0;
+        uint32_t dataSequence_ = 0;
         std::unordered_map<size_t, Packet::IcmpPacket> packetsWaitingForAck_;
         std::string inputFile_;
         packetSendingGrowth sendingGrowth_;
-
-        void run();
+        const pid_t pid_;
 
         /**
          * method for resolving a given hostname's addresses (both IPv4 and IPv6)
@@ -54,7 +54,9 @@ namespace Client {
     public:
         explicit Client(std::string hostNameArg);
 
-        void openConn(const ResolvedAddr &resolved_addr);
+        void openConn(const ResolvedAddr &resolvedAddr);
+
+        void run();
 
     };
 } // client

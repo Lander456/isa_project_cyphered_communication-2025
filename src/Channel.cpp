@@ -5,6 +5,9 @@
 #include <stdexcept>
 #include "../include/Channel.h"
 
+#include <cstring>
+#include <iostream>
+
 #include "../include/Packet.h"
 
 namespace Channel {
@@ -13,10 +16,11 @@ namespace Channel {
         if (family_ == AF_INET) {
             sockfd_ = socket(family_, SOCK_RAW, IPPROTO_ICMP);
         } else {
-            sockfd_ = socket(family_, SOCK_DGRAM, IPPROTO_ICMPV6);
+            sockfd_ = socket(family_, SOCK_RAW, IPPROTO_ICMPV6);
         }
         if (sockfd_ < 0) {
-            throw std::runtime_error("Failed to create a socket");
+            perror("sockfd");
+            exit(1);
         }
 
         timeval tv{};
@@ -63,6 +67,7 @@ namespace Channel {
             }
 
             auto packet = Packet::IcmpPacket::parse(buffer, received);
+            Packet::IcmpPacket::swapByteOrder(packet);
 
             if (packet.icmpHeader.id == expectedId) {
                 return packet;
@@ -71,7 +76,14 @@ namespace Channel {
     }
 
     bool Channel::verifyChecksum(const Packet::IcmpPacket& packet) {
-        return Packet::IcmpPacket::calculateChecksum(&packet.data[0], packet.protocol.payloadLength) == packet.icmpHeader.checksum;
+        std::vector<uint8_t> buffer(sizeof(packet.icmpHeader) + sizeof(packet.protocol) + packet.data.size());
+        std::memcpy(buffer.data(), &packet.icmpHeader, sizeof(packet.icmpHeader));
+        buffer[2] = 0;
+        buffer[3] = 0;
+        std::memcpy(buffer.data() + sizeof(packet.icmpHeader), &packet.protocol, sizeof(packet.protocol));
+        std::memcpy(buffer.data() + sizeof(packet.icmpHeader) + sizeof(packet.protocol), packet.data.data(), packet.data.size());
+
+        return Packet::IcmpPacket::calculateChecksum(buffer.data(), buffer.size()) == htons(packet.icmpHeader.checksum);
     }
 
     Packet::IcmpPacket Channel::listen() {
@@ -81,18 +93,37 @@ namespace Channel {
             const ssize_t received = recvfrom(sockfd_, buffer, sizeof(buffer), 0, reinterpret_cast<struct sockaddr *>(&remoteAddress_), &remoteAddressLength_);
 
             if (received < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    continue;
+                }
                 perror("recv");
-                break;
+                exit(1);
             }
 
             Packet::IcmpPacket packet = Packet::IcmpPacket::parse(buffer, received);
 
             if (packet.icmpHeader.checksum != 0) {
                 if (verifyChecksum(packet)) {
+                    Packet::IcmpPacket::swapByteOrder(packet);
                     return packet;
                 }
                 return {};
             }
         }
+        return {};
+    }
+
+    bool Channel::transmissionHandover(const pid_t id, const uint16_t sequence) const {
+        const std::vector<uint8_t> emptyData;
+        const auto packet = Packet::IcmpPacket::createPacket(8, 0, id, sequence, PacketType::TRANSMISSION_HANDOVER, emptyData);
+        const auto serializedPacket = packet.serialize();
+        return sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr *>(&remoteAddress_));
+    }
+
+    bool Channel::sendAck(const pid_t id, const uint16_t sequenceNum) const {
+        const std::vector<uint8_t> emptyData;
+        const auto packet = Packet::IcmpPacket::createPacket(0, 0, id, sequenceNum, PacketType::ACK, emptyData);
+        const auto serializedPacket = packet.serialize();
+        return sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr *>(&remoteAddress_));
     }
 } // Channel

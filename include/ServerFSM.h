@@ -8,7 +8,6 @@
 enum class GreeterFSM {
     INIT,
     LISTENING,
-    FORKING,
     ERROR
 };
 

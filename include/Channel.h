@@ -37,6 +37,10 @@ namespace Channel {
 
         Packet::IcmpPacket listen();
 
+        bool transmissionHandover(pid_t id, uint16_t sequence) const;
+
+        bool sendAck(pid_t id, uint16_t sequenceNum) const;
+
     private:
         int sockfd_{-1};
         int family_;

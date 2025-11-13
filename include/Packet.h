@@ -22,7 +22,7 @@ enum class PacketType : uint8_t {
 #pragma pack(push, 1)
 namespace Packet {
 
-    struct icmpHeader {
+    struct icmpHeader_t {
         uint8_t type;
         uint8_t code;
         uint16_t checksum;
@@ -33,6 +33,7 @@ namespace Packet {
     struct protocolInfo {
         PacketType type;
         uint16_t payloadLength;
+        uint32_t dataSequence;
     };
 
     struct PseudoHeader {
@@ -49,7 +50,7 @@ namespace Packet {
 
         ip ipHeader{};
 
-        icmpHeader icmpHeader{};
+        icmpHeader_t icmpHeader{};
 
         protocolInfo protocol{};
 
@@ -66,6 +67,8 @@ namespace Packet {
         static IcmpPacket createPacket(uint8_t icmpType, uint8_t code, uint16_t id, uint16_t icmpSequence, PacketType protocolType, const std::vector<uint8_t> &data);
 
         static uint16_t calculateChecksum(const void* data, size_t length);
+
+        static void swapByteOrder(IcmpPacket &packet);
     };
 } //Packet
 #endif //PACKET_H
