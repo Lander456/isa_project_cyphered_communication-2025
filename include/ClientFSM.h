@@ -9,10 +9,8 @@ enum class ClientFSM {
     INIT,
     SEND_HELLO,
     AWAIT_HELLO_BACK,
-    AWAIT_RECEIVE,
+    SEND_FILENAME,
     SEND_DATA,
-    AWAIT_ACK,
-    RETRANSMIT,
     TRANSMIT_DONE,
     SHUTDOWN,
     ERROR

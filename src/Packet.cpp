@@ -40,7 +40,6 @@ namespace Packet {
         packet.icmpHeader.checksum = ntohs(packet.icmpHeader.checksum);
         packet.icmpHeader.sequence = ntohs(packet.icmpHeader.sequence);
         packet.protocol.payloadLength = ntohs(packet.protocol.payloadLength);
-        packet.protocol.dataSequence = ntohl(packet.protocol.dataSequence);
     }
 
     IcmpPacket IcmpPacket::parse(const uint8_t *data, const size_t length) {
@@ -143,13 +142,13 @@ namespace Packet {
         icmpHeader.checksum = checksum;
     }
 
-    IcmpPacket IcmpPacket::createPacket(const uint8_t icmpType, const uint8_t code, const uint16_t id, const uint16_t icmpSequence, const PacketType protocolType, const std::vector<uint8_t> &data) {
+    IcmpPacket IcmpPacket::createPacket(const uint8_t icmpType, const uint8_t code, const uint16_t id, const PacketType protocolType, const std::vector<uint8_t> &data) {
         IcmpPacket packet;
 
         packet.icmpHeader.type = icmpType;
         packet.icmpHeader.code = code;
         packet.icmpHeader.id = htons(id);
-        packet.icmpHeader.sequence = htons(icmpSequence);
+        packet.icmpHeader.sequence = htons(0);
         packet.icmpHeader.checksum = 0;
 
         packet.protocol.type = protocolType;

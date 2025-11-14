@@ -14,7 +14,6 @@ enum class GreeterFSM {
 enum class ReceiverFSM {
     INIT,
     RECEIVING,
-    ACKING,
     ERROR,
     SHUTDOWN
 };

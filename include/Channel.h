@@ -11,7 +11,7 @@
 
 #include "Packet.h"
 
-#define CHUNK_SIZE 1500
+#define CHUNK_SIZE 1400
 #define TIMEOUT_MS 1000
 
 namespace Channel {
@@ -37,9 +37,7 @@ namespace Channel {
 
         Packet::IcmpPacket listen();
 
-        bool transmissionHandover(pid_t id, uint16_t sequence) const;
-
-        bool sendAck(pid_t id, uint16_t sequenceNum) const;
+        [[nodiscard]] bool transmissionHandover(pid_t id) const;
 
     private:
         int sockfd_{-1};

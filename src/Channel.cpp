@@ -58,7 +58,6 @@ namespace Channel {
             }
 
             ssize_t received = recvfrom(sockfd_, buffer, 1500, 0, source, &remoteAddressLength_);
-
             if (received < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     continue;
@@ -67,9 +66,10 @@ namespace Channel {
             }
 
             auto packet = Packet::IcmpPacket::parse(buffer, received);
-            Packet::IcmpPacket::swapByteOrder(packet);
 
-            if (packet.icmpHeader.id == expectedId) {
+            if (htons(packet.icmpHeader.id) == expectedId) {
+
+                Packet::IcmpPacket::swapByteOrder(packet);
                 return packet;
             }
         }
@@ -113,16 +113,9 @@ namespace Channel {
         return {};
     }
 
-    bool Channel::transmissionHandover(const pid_t id, const uint16_t sequence) const {
+    bool Channel::transmissionHandover(const pid_t id) const {
         const std::vector<uint8_t> emptyData;
-        const auto packet = Packet::IcmpPacket::createPacket(8, 0, id, sequence, PacketType::TRANSMISSION_HANDOVER, emptyData);
-        const auto serializedPacket = packet.serialize();
-        return sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr *>(&remoteAddress_));
-    }
-
-    bool Channel::sendAck(const pid_t id, const uint16_t sequenceNum) const {
-        const std::vector<uint8_t> emptyData;
-        const auto packet = Packet::IcmpPacket::createPacket(0, 0, id, sequenceNum, PacketType::ACK, emptyData);
+        const auto packet = Packet::IcmpPacket::createPacket(8, 0, id, PacketType::TRANSMISSION_HANDOVER, emptyData);
         const auto serializedPacket = packet.serialize();
         return sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr *>(&remoteAddress_));
     }

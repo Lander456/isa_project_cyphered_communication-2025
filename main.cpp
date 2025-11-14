@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
         std::cout << config.server << std::endl;
         std::cout << "Input filepath: " << config.inputFile << std::endl;
         std::cout << "IP/Hostname: " << config.ipHostname << std::endl;
-        auto client = Client::Client(config.ipHostname);
+        auto client = Client::Client(config.ipHostname, config.inputFile);
         client.run();
     }
 

@@ -11,12 +11,13 @@
 
 enum class PacketType : uint8_t {
     HELLO = 200,
-    ACK = 201,
-    DATA = 202,
-    RECEIVING = 203,
-    GOODBYE = 204,
-    ERROR = 205,
-    TRANSMISSION_HANDOVER = 206
+    DATA = 201,
+    RECEIVING = 202,
+    GOODBYE = 203,
+    ERROR = 204,
+    TRANSMISSION_HANDOVER = 205,
+    HELLO_REPLY = 206,
+    FILENAME = 207
 };
 
 #pragma pack(push, 1)
@@ -33,7 +34,6 @@ namespace Packet {
     struct protocolInfo {
         PacketType type;
         uint16_t payloadLength;
-        uint32_t dataSequence;
     };
 
     struct PseudoHeader {
@@ -64,7 +64,7 @@ namespace Packet {
 
         static IcmpPacket parse(const uint8_t* data, size_t length);
 
-        static IcmpPacket createPacket(uint8_t icmpType, uint8_t code, uint16_t id, uint16_t icmpSequence, PacketType protocolType, const std::vector<uint8_t> &data);
+        static IcmpPacket createPacket(uint8_t icmpType, uint8_t code, uint16_t id, PacketType protocolType, const std::vector<uint8_t> &data);
 
         static uint16_t calculateChecksum(const void* data, size_t length);
 

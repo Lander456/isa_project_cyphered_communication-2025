@@ -25,11 +25,6 @@ namespace Client {
             int family;
         };
 
-        enum class packetSendingGrowth {
-            EXPONENTIAL_GROWTH,
-            STEADY_GROWTH,
-        };
-
         ClientFSM state_;
         bool transmitted_;
         std::vector<ResolvedAddr> resolvedAddrs_;
@@ -37,11 +32,8 @@ namespace Client {
         std::uniform_int_distribution<int> dist_;
         std::string hostnameArg_;
         Channel::Channel* commsChannel_ = nullptr;
-        size_t sequenceNum_ = 0;
-        uint32_t dataSequence_ = 0;
         std::unordered_map<size_t, Packet::IcmpPacket> packetsWaitingForAck_;
         std::string inputFile_;
-        packetSendingGrowth sendingGrowth_;
         const pid_t pid_;
 
         /**
@@ -52,7 +44,7 @@ namespace Client {
         static std::vector<ResolvedAddr> resolveHostname(const std::string &hostname);
 
     public:
-        explicit Client(std::string hostNameArg);
+        explicit Client(std::string hostNameArg, std::string inputFile);
 
         void openConn(const ResolvedAddr &resolvedAddr);
 
