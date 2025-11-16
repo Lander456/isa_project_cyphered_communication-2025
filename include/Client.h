@@ -5,15 +5,16 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include <arpa/inet.h>
 #include <string>
 #include <vector>
 #include <random>
 #include <unordered_map>
+#include <fstream>
 
 #include "ClientFSM.h"
 #include "Packet.h"
 #include "Channel.h"
+#include "Cipher.h"
 
 namespace Client {
     class Client {
@@ -35,6 +36,10 @@ namespace Client {
         std::unordered_map<size_t, Packet::IcmpPacket> packetsWaitingForAck_;
         std::string inputFile_;
         const pid_t pid_;
+        uint8_t icmpType_;
+        std::ifstream inputFileStream_;
+        Cipher::Cipher cipherer_;
+        std::vector<uint8_t> iv_;
 
         /**
          * method for resolving a given hostname's addresses (both IPv4 and IPv6)

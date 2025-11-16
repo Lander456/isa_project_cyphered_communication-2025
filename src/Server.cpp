@@ -8,7 +8,7 @@
 
 namespace Server {
 
-    Greeter::Greeter(const int family) : state_(GreeterFSM::LISTENING), commsChannel_(family), family_(family), pid_(getpid()) { }
+    Greeter::Greeter(const int family) : state_(GreeterFSM::LISTENING), commsChannel_(family), family_(family), pid_(getpid()), cipherer_("xtopint00") { }
 
     void Greeter::run() {
         switch (state_) {
@@ -32,30 +32,34 @@ namespace Server {
 
             if (packet.protocol.type == PacketType::HELLO && packet.icmpHeader.type != 0) {
                 std::cout << "forking" << std::endl;
-                forkReceiver(commsChannel_.getRemoteAddress(), packet.icmpHeader.id);
+                std::cout << "packet.data.size() = " << packet.data.size() << std::endl;
+                forkReceiver(commsChannel_.getRemoteAddress(), packet.icmpHeader.id, packet.data);
             }
         }
     }
 
-    void Greeter::forkReceiver(const sockaddr_storage &clientAddr, const pid_t &commsId) {
+    void Greeter::forkReceiver(const sockaddr_storage &clientAddr, const pid_t &commsId, const std::vector<uint8_t> &iv) {
         pid_t pid = fork();
         if (pid == 0) {
-            auto receiver = Receiver(clientAddr, commsId);
+            auto receiver = Receiver(clientAddr, commsId, iv);
             receiver.run();
             exit(0);
         }
     }
 
-    Receiver::Receiver(const sockaddr_storage &remoteAddr, const pid_t &commsId)
-        : family_(remoteAddr.ss_family), state_(ReceiverFSM::INIT), commsChannel_(remoteAddr.ss_family), commsId_(commsId), outputFile_() {
+    Receiver::Receiver(const sockaddr_storage &remoteAddr, const pid_t &commsId, const std::vector<uint8_t> &iv)
+        : family_(remoteAddr.ss_family), state_(ReceiverFSM::INIT), commsChannel_(remoteAddr.ss_family), commsId_(commsId), outputFile_(), icmpType_(), cipherer_("xtopint00") {
         commsChannel_.setRemoteAddress(remoteAddr);
+        iv_ = iv;
         switch (family_) {
             case AF_INET: {
                 commsChannel_.setRemoteAddressLength(sizeof(sockaddr_in));
+                icmpType_ = 8;
                 break;
             }
             case AF_INET6: {
                 commsChannel_.setRemoteAddressLength(sizeof(sockaddr_in6));
+                icmpType_ = 128;
                 break;
             }
             default: {
@@ -71,7 +75,7 @@ namespace Server {
             std::vector<uint8_t> emptyData;
             switch (state_) {
                 case ReceiverFSM::INIT: {
-                    auto packet = Packet::IcmpPacket::createPacket(8, 0, commsId_, PacketType::HELLO_REPLY, emptyData);
+                    auto packet = Packet::IcmpPacket::createPacket(icmpType_, 0, commsId_, PacketType::HELLO_REPLY, emptyData);
                     auto serializedPacket = packet.serialize();
                     commsChannel_.sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_.getRemoteAddress()));
 
@@ -89,20 +93,23 @@ namespace Server {
                     switch (packet.protocol.type) {
                         case PacketType::FILENAME: {
                             std::cout << "FILENAME" << std::endl;
-                            std::string filename(packet.data.begin(), packet.data.end());
+
+                            auto decryptedData = cipherer_.decrypt(packet.data, iv_);
+
+                            std::string filename(decryptedData.begin(), decryptedData.end());
+                            std::cout << filename << std::endl;
                             filename.erase(std::find(filename.begin(), filename.end(), '\0'), filename.end());
 
                             std::cout << "filename received: " << filename << std::endl;
-                            std::cout << "Before open, state = " << outputFile_.rdstate() << std::endl;
                             outputFile_.open(filename, std::ios::binary);
-                            std::cout << "After open, state = " << outputFile_.rdstate() << std::endl;
 
                             break;
                         }
                         case PacketType::DATA: {
                             std::cout << "WRITE" << std::endl;
                             if (outputFile_.is_open()) {
-                                outputFile_.write(reinterpret_cast<const char*>(packet.data.data()), packet.data.size());
+                                auto decryptedData = cipherer_.decrypt(packet.data, iv_);
+                                outputFile_.write(reinterpret_cast<const char*>(decryptedData.data()), decryptedData.size());
                                 outputFile_.flush();
                             } else {
                                 std::cout << "FUCK" << std::endl;
@@ -132,28 +139,6 @@ namespace Server {
                     run = false;
                     break;
                 }
-            }
-        }
-    }
-
-    bool Receiver::awaitTransmissionWindow() {
-        auto start = std::chrono::steady_clock::now();
-        while (true) {
-            auto now = std::chrono::steady_clock::now();
-            int timePassed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
-
-            auto packet = commsChannel_.waitForResponse(commsId_, reinterpret_cast<sockaddr*>(&commsChannel_.getRemoteAddress()));
-
-            if (timePassed > TIMEOUT_MS || packet.icmpHeader.checksum == 0) {
-                return false;
-            }
-
-            if (packet.icmpHeader.type == 0 && packet.icmpHeader.checksum != 0) {
-                continue;
-            }
-
-            if (packet.protocol.type == PacketType::TRANSMISSION_HANDOVER) {
-                return true;
             }
         }
     }

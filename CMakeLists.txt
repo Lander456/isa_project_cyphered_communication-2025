@@ -18,4 +18,6 @@ add_executable(projekt
         include/Channel.h
         include/ClientFSM.h
         include/ServerFSM.h
+        src/Cipher.cpp
+        include/Cipher.h
 )

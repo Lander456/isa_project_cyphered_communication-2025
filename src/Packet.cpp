@@ -8,6 +8,9 @@
 
 #include "../include/Packet.h"
 
+#include <iostream>
+#include <ostream>
+
 namespace Packet {
 
     uint16_t IcmpPacket::calculateChecksum(const void* data, size_t length) {

@@ -103,11 +103,8 @@ namespace Channel {
             Packet::IcmpPacket packet = Packet::IcmpPacket::parse(buffer, received);
 
             if (packet.icmpHeader.checksum != 0) {
-                if (verifyChecksum(packet)) {
-                    Packet::IcmpPacket::swapByteOrder(packet);
-                    return packet;
-                }
-                return {};
+                Packet::IcmpPacket::swapByteOrder(packet);
+                return packet;
             }
         }
         return {};
