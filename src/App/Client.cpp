@@ -1,5 +1,5 @@
 //
-// Created by tadeas on 2025-10-16.
+// Created by Tadeas Topinka (xtopint00) on 2025-10-16.
 //
 
 #include <cstdint>
@@ -10,10 +10,9 @@
 #include <iostream>
 #include <cstring>
 #include <openssl/rand.h>
+#include <atomic>
 
 #include "../../include/Client.h"
-
-#include <atomic>
 
 namespace Client {
 

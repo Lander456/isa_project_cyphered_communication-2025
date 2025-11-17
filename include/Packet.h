@@ -1,5 +1,6 @@
 //
-// Created by tadeas on 2025-10-21.
+// Created by Tadeas Topinka (xtopint00) on 2025-10-21.
+//
 
 #ifndef PACKET_H
 #define PACKET_H

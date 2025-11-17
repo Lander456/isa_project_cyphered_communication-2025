@@ -1,13 +1,13 @@
 //
-// Created by tadeas on 2025-10-16.
+// Created by Tadeas Topinka (xtopint00) on 2025-10-16.
 //
-
-#include "../../include/Server.h"
 
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
 #include <iostream>
+
+#include "../../include/Server.h"
 
 namespace Server {
 

@@ -1,6 +1,11 @@
-#include "../../include/ArgParser.h"
+//
+// Created by Tadeas Topinka (xtopint00) on 2025-10-16.
+//
+
 #include <iostream>
 #include <cstring>
+
+#include "../../include/ArgParser.h"
 
 namespace argparser {
 

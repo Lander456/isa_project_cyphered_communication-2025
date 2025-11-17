@@ -1,16 +1,16 @@
 //
-// Created by tadeas on 2025-10-16.
+// Created by Tadeas Topinka (xtopint00) on 2025-10-16.
 //
 
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <atomic>
+#include <fstream>
+
 #include "Channel.h"
 #include "Cipher.h"
 #include "ServerFSM.h"
-
-#include <atomic>
-#include <fstream>
 
 namespace Server {
     class Greeter {
@@ -64,7 +64,7 @@ namespace Server {
          * method used to fork a new Receiver instance to facilitate further communication with the client
          * @param clientAddr the Client's address
          * @param commsId ID used for the communication (Client's PID)
-         * @param iv ciphering vector used for the communication
+         * @param iv intialization vector used for the communication
          * @param die used to pass the die bool pointer
          */
         static void forkReceiver(const sockaddr_storage &clientAddr, const pid_t &commsId, const std::vector<uint8_t> &iv, std::atomic<bool>& die);
@@ -77,7 +77,7 @@ namespace Server {
          * Receiver constructor
          * @param remoteAddr address that the receiver will be getting data from
          * @param commsId ID used for the communication (remote's PID)
-         * @param iv ciphering vector used for the communication
+         * @param iv initialization vector used for the communication
          * @param die used to pass the die bool pointer
          */
         Receiver(const sockaddr_storage &remoteAddr, const pid_t &commsId, const std::vector<uint8_t> &iv, std::atomic<bool>& die);
@@ -124,7 +124,7 @@ namespace Server {
         Cipher::Cipher cipherer_;
 
         /**
-         * ciphering vector used for this communication
+         * initialization vector used for this communication
          */
         std::vector<uint8_t> iv_;
 

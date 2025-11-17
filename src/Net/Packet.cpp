@@ -1,15 +1,13 @@
 //
-// Created by tadeas on 2025-10-21.
+// Created by Tadeas Topinka (xtopint00) on 2025-10-21.
 //
 
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
+#include <iostream>
 
 #include "../../include/Packet.h"
-
-#include <iostream>
-#include <ostream>
 
 namespace Packet {
 

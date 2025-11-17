@@ -1,12 +1,11 @@
 //
-// Created by root on 2025-11-15.
+// Created by Tadeas Topinka (xtopint00) on 2025-11-15.
 //
 
-#include "../../include/Cipher.h"
-
-#include <iostream>
 #include <openssl/sha.h>
 #include <openssl/rand.h>
+
+#include "../../include/Cipher.h"
 
 namespace Cipher {
     Cipher::Cipher(const std::string& login) {

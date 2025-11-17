@@ -1,5 +1,5 @@
 //
-// Created by tadeas on 2025-10-26.
+// Created by Tadeas Topinka (xtopint00) on 2025-10-26.
 //
 
 #ifndef PROJEKT_CHANNEL_H
@@ -7,7 +7,6 @@
 
 #include <unistd.h>
 #include <netdb.h>
-#include <chrono>
 
 #include "Packet.h"
 

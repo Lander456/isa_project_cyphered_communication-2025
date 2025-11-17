@@ -1,5 +1,5 @@
 //
-// Created by root on 2025-11-15.
+// Created by Tadeas Topinka (xtopint00) on 2025-11-15.
 //
 
 #ifndef PROJEKT_CIPHER_H
@@ -7,7 +7,6 @@
 
 #include <vector>
 #include <string>
-#include <openssl/evp.h>
 
 namespace Cipher {
     class Cipher {
@@ -21,7 +20,7 @@ namespace Cipher {
         /**
          * method used to encrypt data using the AES256 cipher
          * @param plainText data to be encrypted
-         * @param iv ciphering vector to be used for this encryption
+         * @param iv initialization vector to be used for this encryption
          * @return encrypted data vector
          */
         std::vector<uint8_t> encrypt(const std::vector<uint8_t>& plainText, std::vector<uint8_t>& iv);
@@ -29,7 +28,7 @@ namespace Cipher {
         /**
          * method used to decrypt data using the AES256 cipher
          * @param cipherText data to be decrypted
-         * @param iv ciphering vector to be used for this decryption
+         * @param iv initialization vector to be used for this decryption
          * @return decrypted data vector
          */
         std::vector<uint8_t> decrypt(const std::vector<uint8_t>& cipherText, std::vector<uint8_t>& iv);

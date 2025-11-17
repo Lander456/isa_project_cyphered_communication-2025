@@ -1,5 +1,6 @@
 //
-// Created by tadeas on 2025-11-10.
+// Created by Tadeas Topinka (xtopint00) on 2025-11-10.
+//
 
 #ifndef PROJEKT_SERVERFSM_H
 #define PROJEKT_SERVERFSM_H

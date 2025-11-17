@@ -1,5 +1,6 @@
 //
-// Created by tadeas on 2025-11-01.
+// Created by Tadeas Topinka (xtopint00) on 2025-11-01.
+//
 
 #ifndef PROJEKT_CLIENTFSM_H
 #define PROJEKT_CLIENTFSM_H
