@@ -1,20 +1,23 @@
 //
 // Created by tadeas on 2025-11-10.
-//
 
 #ifndef PROJEKT_SERVERFSM_H
 #define PROJEKT_SERVERFSM_H
 
+/**
+ * enum containing all the Greeter states
+ */
 enum class GreeterFSM {
-    INIT,
     LISTENING,
-    ERROR
+    SHUTDOWN
 };
 
+/**
+ * enum containing all the Receiver states
+ */
 enum class ReceiverFSM {
     INIT,
     RECEIVING,
-    ERROR,
     SHUTDOWN
 };
 

@@ -4,20 +4,19 @@ project(projekt)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(projekt
-        src/ArgParser.cpp
+        src/Common/ArgParser.cpp
         include/ArgParser.h
-        src/Client.cpp
+        src/App/Client.cpp
         include/Client.h
-        src/Server.cpp
+        src/App/Server.cpp
         include/Server.h
         main.cpp
-        src/Packet.cpp
+        src/Net/Packet.cpp
         include/Packet.h
-        include/Common.h
-        src/Channel.cpp
+        src/Net/Channel.cpp
         include/Channel.h
         include/ClientFSM.h
         include/ServerFSM.h
-        src/Cipher.cpp
+        src/Common/Cipher.cpp
         include/Cipher.h
 )

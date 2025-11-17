@@ -1,4 +1,4 @@
-#include "../include/ArgParser.h"
+#include "../../include/ArgParser.h"
 #include <iostream>
 #include <cstring>
 
@@ -10,8 +10,15 @@ namespace argparser {
 
     Config ArgParser::parse() const {
         Config config = {};
+        opterr = 0;
         int arg;
         int optionIndex;
+        bool error = false;
+
+        if (argc_ == 1) {
+            std::cerr << "No args passed, exiting!" << std::endl;
+            error = true;
+        }
 
         while ((arg = getopt_long(argc_, argv_, "r:s:l", longOptions, &optionIndex)) != -1) {
             switch (arg) {
@@ -24,15 +31,25 @@ namespace argparser {
                 case 'l':
                     config.server = true;
                     break;
+                case '?':
                 default:
                     std::cerr << "Unknown args passed, exiting!" << std::endl;
                     exit(1);
             }
         }
 
+        if (optind < argc_) {
+            std::cerr << "Unexpected positional argument: " << argv_[optind] << " exiting!" << std::endl;
+            error = true;
+        }
+
         if (config.server && (!config.ipHostname.empty() || !config.inputFile.empty())) {
             std::cerr << "Invalid argument combination, exiting!" << std::endl;
-            printHelp("secret");
+            error = true;
+        }
+
+        if (error) {
+            printHelp(argv_[0]);
             exit(1);
         }
 
@@ -43,7 +60,7 @@ namespace argparser {
         std::cout << "Program usage: " << programName << " -r <file> -s <ip|hostname> [-l]" << std::endl;
     }
 
-    struct option ArgParser::longOptions[] = {
+    option ArgParser::longOptions[] = {
         { "filepath", required_argument, nullptr, 'r' },
         { "serverIP", required_argument, nullptr, 's' },
         {"becomeServer", no_argument, nullptr, 'l'},

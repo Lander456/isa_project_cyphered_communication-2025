@@ -2,53 +2,51 @@
 // Created by tadeas on 2025-10-16.
 //
 
-#include "../include/Server.h"
+#include "../../include/Server.h"
 
+#include <algorithm>
+#include <csignal>
+#include <filesystem>
 #include <iostream>
 
 namespace Server {
 
-    Greeter::Greeter(const int family) : state_(GreeterFSM::LISTENING), commsChannel_(family), family_(family), pid_(getpid()), cipherer_("xtopint00") { }
+    Greeter::Greeter(const int family, std::atomic<bool>& die)
+    : state_(GreeterFSM::LISTENING), commsChannel_(family), family_(family), pid_(getpid()), cipherer_("xtopint00"), die_(die) { }
 
     void Greeter::run() {
-        switch (state_) {
-            case GreeterFSM::INIT: {
-                state_ = GreeterFSM::LISTENING;
-                break;
+        bool run = true;
+        while (run) {
+            if (die_.load(std::memory_order_relaxed)) {
+                state_ = GreeterFSM::SHUTDOWN;
             }
-            case GreeterFSM::LISTENING: {
-                listen();
-            }
-            case GreeterFSM::ERROR: {
-
-                break;
-            }
-        }
-    }
-
-    void Greeter::listen() {
-        while (true) {
-            auto packet = commsChannel_.listen();
-
-            if (packet.protocol.type == PacketType::HELLO && packet.icmpHeader.type != 0) {
-                std::cout << "forking" << std::endl;
-                std::cout << "packet.data.size() = " << packet.data.size() << std::endl;
-                forkReceiver(commsChannel_.getRemoteAddress(), packet.icmpHeader.id, packet.data);
+            switch (state_) {
+                case GreeterFSM::LISTENING: {
+                    auto packet = commsChannel_.listen();
+                    if (packet.protocol.type == PacketType::HELLO && packet.icmpHeader.type != 0) {
+                        forkReceiver(commsChannel_.getRemoteAddress(), packet.icmpHeader.id, packet.data, die_);
+                    }
+                    break;
+                }
+                case GreeterFSM::SHUTDOWN: {
+                    run = false;
+                    break;
+                }
             }
         }
     }
 
-    void Greeter::forkReceiver(const sockaddr_storage &clientAddr, const pid_t &commsId, const std::vector<uint8_t> &iv) {
+    void Greeter::forkReceiver(const sockaddr_storage &clientAddr, const pid_t &commsId, const std::vector<uint8_t> &iv, std::atomic<bool>& die) {
         pid_t pid = fork();
         if (pid == 0) {
-            auto receiver = Receiver(clientAddr, commsId, iv);
+            auto receiver = Receiver(clientAddr, commsId, iv, die);
             receiver.run();
             exit(0);
         }
     }
 
-    Receiver::Receiver(const sockaddr_storage &remoteAddr, const pid_t &commsId, const std::vector<uint8_t> &iv)
-        : family_(remoteAddr.ss_family), state_(ReceiverFSM::INIT), commsChannel_(remoteAddr.ss_family), commsId_(commsId), outputFile_(), icmpType_(), cipherer_("xtopint00") {
+    Receiver::Receiver(const sockaddr_storage &remoteAddr, const pid_t &commsId, const std::vector<uint8_t> &iv, std::atomic<bool>& die)
+        : family_(remoteAddr.ss_family), state_(ReceiverFSM::INIT), commsChannel_(remoteAddr.ss_family), commsId_(commsId), outputFile_(), icmpType_(), cipherer_("xtopint00"), die_(die){
         commsChannel_.setRemoteAddress(remoteAddr);
         iv_ = iv;
         switch (family_) {
@@ -72,9 +70,12 @@ namespace Server {
         bool run = true;
 
         while (run) {
-            std::vector<uint8_t> emptyData;
+            if (die_.load(std::memory_order_relaxed)) {
+                state_ = ReceiverFSM::SHUTDOWN;
+            }
             switch (state_) {
                 case ReceiverFSM::INIT: {
+                    std::vector<uint8_t> emptyData;
                     auto packet = Packet::IcmpPacket::createPacket(icmpType_, 0, commsId_, PacketType::HELLO_REPLY, emptyData);
                     auto serializedPacket = packet.serialize();
                     commsChannel_.sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_.getRemoteAddress()));
@@ -83,7 +84,6 @@ namespace Server {
                     break;
                 }
                 case ReceiverFSM::RECEIVING: {
-                    std::cout << "RECEIVING" << std::endl;
 
                     auto packet = commsChannel_.waitForResponse(commsId_, reinterpret_cast<sockaddr*>(&commsChannel_.getRemoteAddress()));
                     if (packet.icmpHeader.type == 0) {
@@ -92,35 +92,37 @@ namespace Server {
 
                     switch (packet.protocol.type) {
                         case PacketType::FILENAME: {
-                            std::cout << "FILENAME" << std::endl;
 
                             auto decryptedData = cipherer_.decrypt(packet.data, iv_);
 
-                            std::string filename(decryptedData.begin(), decryptedData.end());
-                            std::cout << filename << std::endl;
-                            filename.erase(std::find(filename.begin(), filename.end(), '\0'), filename.end());
+                            filename_.assign(decryptedData.begin(), decryptedData.end());
+                            filename_.erase(std::find(filename_.begin(), filename_.end(), '\0'), filename_.end());
 
-                            std::cout << "filename received: " << filename << std::endl;
-                            outputFile_.open(filename, std::ios::binary);
+                            outputFile_.open(filename_, std::ios::binary);
 
                             break;
                         }
                         case PacketType::DATA: {
-                            std::cout << "WRITE" << std::endl;
                             if (outputFile_.is_open()) {
                                 auto decryptedData = cipherer_.decrypt(packet.data, iv_);
                                 outputFile_.write(reinterpret_cast<const char*>(decryptedData.data()), decryptedData.size());
                                 outputFile_.flush();
                             } else {
-                                std::cout << "FUCK" << std::endl;
+                                std::cerr << "ERROR: Failed to write to file!" << std::endl;
+                                state_ = ReceiverFSM::SHUTDOWN;
                             }
                             break;
                         }
-                        case PacketType::GOODBYE: {
+                        case PacketType::TRANSMISSION_COMPLETE: {
                             outputFile_.close();
                             if (outputFile_.is_open()) {
-                                std::cout << "FUCK" << std::endl;
+                                std::cerr << "ERROR: Failed to close file!" << std::endl;
+                                exit(1);
                             }
+                            state_ = ReceiverFSM::SHUTDOWN;
+                            break;
+                        }
+                        case PacketType::GOODBYE: {
                             state_ = ReceiverFSM::SHUTDOWN;
                             break;
                         }
@@ -130,12 +132,14 @@ namespace Server {
                     }
                     break;
                 }
-                case ReceiverFSM::ERROR: {
-                    state_ = ReceiverFSM::SHUTDOWN;
-                    break;
-                }
 
                 case ReceiverFSM::SHUTDOWN: {
+
+                    if (outputFile_.is_open()) {
+                        outputFile_.close();
+                        std::filesystem::remove(filename_);
+                    }
+
                     run = false;
                     break;
                 }

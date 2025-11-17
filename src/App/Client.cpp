@@ -11,12 +11,14 @@
 #include <cstring>
 #include <openssl/rand.h>
 
-#include "../include/Client.h"
+#include "../../include/Client.h"
+
+#include <atomic>
 
 namespace Client {
 
-    Client::Client(std::string hostNameArg, std::string inputFile)
-        : state_(ClientFSM::INIT), transmitted_(false), rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), hostnameArg_(std::move(hostNameArg)), inputFile_(std::move(inputFile)), pid_(getpid()), icmpType_(0), inputFileStream_(inputFile_, std::ios::binary), cipherer_("xtopint00"), iv_(16) {
+    Client::Client(std::string hostNameArg, std::string inputFile, std::atomic<bool>& die)
+        : state_(ClientFSM::INIT), rng_(std::random_device{}()), dist_(std::uniform_int_distribution<int>(1024, 65535)), hostnameArg_(std::move(hostNameArg)), inputFile_(std::move(inputFile)), pid_(getpid()), icmpType_(0), inputFileStream_(inputFile_, std::ios::binary), cipherer_("xtopint00"), iv_(16), die_(die) {
         if (!inputFileStream_.is_open()) {
             std::cerr << "ERROR: Failed to open " << inputFile_ << std::endl;
             exit(1);
@@ -25,10 +27,14 @@ namespace Client {
 
     void Client::run() {
         bool run = true;
-        int currentAddr = 0;
+        size_t currentAddr = 0;
 
         while (run) {
-            std::vector<uint8_t> emptyData;
+
+            if (die_.load(std::memory_order_relaxed)) {
+                state_ = ClientFSM::SHUTDOWN;
+            }
+
             switch (state_) {
                 case ClientFSM::INIT: {
                     resolvedAddrs_ = resolveHostname(hostnameArg_);
@@ -36,6 +42,11 @@ namespace Client {
                     break;
                 }
                 case ClientFSM::SEND_HELLO: {
+
+                    if (currentAddr >= resolvedAddrs_.size()) {
+                        std::cout << "ERROR: failed to connect to host, please check whether the hostname you entered is correct" << std::endl;
+                        exit(0);
+                    }
 
                     openConn(resolvedAddrs_[currentAddr]);
                     if (resolvedAddrs_[currentAddr].family == AF_INET) {
@@ -70,6 +81,10 @@ namespace Client {
                     break;
                 }
                 case ClientFSM::SEND_FILENAME: {
+                    if (die_.load()) {
+                        state_ = ClientFSM::SHUTDOWN;
+                        break;
+                    }
                     std::vector<uint8_t> filename(inputFile_.begin(), inputFile_.end());
 
                     filename = cipherer_.encrypt(filename, iv_);
@@ -89,11 +104,15 @@ namespace Client {
                     std::vector<uint8_t> buffer(CHUNK_SIZE);
 
                     while (true) {
+                        if (die_.load(std::memory_order_relaxed)) {
+                            state_ = ClientFSM::SHUTDOWN;
+                            break;
+                        }
                         inputFileStream_.read(reinterpret_cast<char*>(buffer.data()), CHUNK_SIZE * sizeof(uint8_t));
                         std::streamsize bytesRead = inputFileStream_.gcount();
 
                         if (bytesRead <= 0) {
-                            state_ = ClientFSM::TRANSMIT_DONE;
+                            state_ = ClientFSM::TRANSMISSION_COMPLETE;
                             break;
                         }
 
@@ -106,33 +125,31 @@ namespace Client {
 
                         commsChannel_->sendPacket(serializedPacket.data(), serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
                         usleep(100);
+                        if (errno == EINTR) {
+                            state_ = ClientFSM::SHUTDOWN;
+                            break;
+                        }
                     }
+                    break;
+                }
 
+                case ClientFSM::TRANSMISSION_COMPLETE: {
+                    std::vector<uint8_t> emptyData;
+                    auto packet = Packet::IcmpPacket::createPacket(icmpType_, 0, pid_, PacketType::TRANSMISSION_COMPLETE, emptyData);
+                    auto serializedPacket = packet.serialize();
+                    commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
+                    state_ = ClientFSM::SHUTDOWN;
                     break;
                 }
 
                 case ClientFSM::SHUTDOWN: {
-                    //TODO graceful shutdown
-                    run = false;
-                    break;
-                }
-                case ClientFSM::TRANSMIT_DONE: {
-
+                    std::vector<uint8_t> emptyData;
                     auto packet = Packet::IcmpPacket::createPacket(icmpType_, 0, pid_, PacketType::GOODBYE, emptyData);
                     auto serializedPacket = packet.serialize();
 
                     commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
-
-                    state_ = ClientFSM::SHUTDOWN;
-                    break;
-                }
-                case ClientFSM::ERROR: {
-                    auto packet = Packet::IcmpPacket::createPacket(icmpType_, 0, pid_, PacketType::ERROR, emptyData);
-                    auto serializedPacket = packet.serialize();
-
-                    commsChannel_->sendPacket(&serializedPacket[0], serializedPacket.size(), reinterpret_cast<const sockaddr*>(&commsChannel_->getRemoteAddress()));
-
-                    state_ = ClientFSM::SHUTDOWN;
+                    delete commsChannel_;
+                    run = false;
                     break;
                 }
             }
@@ -152,7 +169,7 @@ namespace Client {
 
         if (status != 0) {
             std::cerr << "getaddrinfo: " << gai_strerror(status) << std::endl;
-            exit(EXIT_FAILURE);
+            exit(1);
         }
 
         for (const addrinfo *p = res; p != nullptr; p = p->ai_next) {
@@ -172,6 +189,7 @@ namespace Client {
     }
 
     void Client::openConn(const ResolvedAddr &resolvedAddr) {
+        delete commsChannel_;
         commsChannel_ = new Channel::Channel(resolvedAddr.family);
         commsChannel_->setRemoteAddress(resolvedAddr.addr);
         commsChannel_->setRemoteAddressLength(resolvedAddr.addr_len);

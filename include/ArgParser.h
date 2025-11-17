@@ -6,6 +6,9 @@
 
 namespace argparser {
 
+    /**
+     * Config struct is used to store the running configuration of the program
+     */
     struct Config {
         std::string inputFile;
         std::string ipHostname;
@@ -14,6 +17,9 @@ namespace argparser {
 
     class ArgParser {
     public:
+        /**
+         * serverFlag is set based on whether the -l argument has been passed
+         */
         static int serverFlag;
 
         /**
@@ -25,16 +31,21 @@ namespace argparser {
 
         /**
          * method used to parse the command line args passed to the program
-         * @return
+         * @return an instance of the Config struct containing information about the running configuration
          */
         [[nodiscard]] Config parse() const;
 
+        /**
+         * method used to print the help message, invoked whenever incomplete or incorrect arguments are detected,
+         * before exiting the program
+         * @param programName program name to be printed in the help message
+         */
         static void printHelp(const char* programName);
 
     private:
         int argc_;
         char** argv_;
-        static struct option longOptions[];
+        static option longOptions[];
     };
 } //argparser
 #endif //ARGPARSER_H

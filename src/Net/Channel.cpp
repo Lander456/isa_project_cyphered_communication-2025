@@ -3,12 +3,12 @@
 //
 
 #include <stdexcept>
-#include "../include/Channel.h"
+#include "../../include/Channel.h"
 
 #include <cstring>
 #include <iostream>
 
-#include "../include/Packet.h"
+#include "../../include/Packet.h"
 
 namespace Channel {
     Channel::Channel(const int family)
@@ -75,17 +75,6 @@ namespace Channel {
         }
     }
 
-    bool Channel::verifyChecksum(const Packet::IcmpPacket& packet) {
-        std::vector<uint8_t> buffer(sizeof(packet.icmpHeader) + sizeof(packet.protocol) + packet.data.size());
-        std::memcpy(buffer.data(), &packet.icmpHeader, sizeof(packet.icmpHeader));
-        buffer[2] = 0;
-        buffer[3] = 0;
-        std::memcpy(buffer.data() + sizeof(packet.icmpHeader), &packet.protocol, sizeof(packet.protocol));
-        std::memcpy(buffer.data() + sizeof(packet.icmpHeader) + sizeof(packet.protocol), packet.data.data(), packet.data.size());
-
-        return Packet::IcmpPacket::calculateChecksum(buffer.data(), buffer.size()) == htons(packet.icmpHeader.checksum);
-    }
-
     Packet::IcmpPacket Channel::listen() {
         uint8_t buffer[1500];
 
@@ -96,7 +85,10 @@ namespace Channel {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     continue;
                 }
-                perror("recv");
+                if (errno == EINTR) {
+                    break;
+                }
+                std::cerr << "ERROR: internal program error" << std::endl;
                 exit(1);
             }
 
@@ -108,12 +100,5 @@ namespace Channel {
             }
         }
         return {};
-    }
-
-    bool Channel::transmissionHandover(const pid_t id) const {
-        const std::vector<uint8_t> emptyData;
-        const auto packet = Packet::IcmpPacket::createPacket(8, 0, id, PacketType::TRANSMISSION_HANDOVER, emptyData);
-        const auto serializedPacket = packet.serialize();
-        return sendPacket(&serializedPacket[0], serializedPacket.size() * sizeof(uint8_t), reinterpret_cast<const sockaddr *>(&remoteAddress_));
     }
 } // Channel

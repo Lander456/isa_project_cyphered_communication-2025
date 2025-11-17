@@ -2,7 +2,7 @@
 // Created by root on 2025-11-15.
 //
 
-#include "../include/Cipher.h"
+#include "../../include/Cipher.h"
 
 #include <iostream>
 #include <openssl/sha.h>

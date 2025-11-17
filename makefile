@@ -1,16 +1,16 @@
 CXX := g++
-CXXFLAGS := -std=c++20 -Wall -Wextra -Iinclude
+CXXFLAGS := -std=c++20 -Wall -Wextra -Werror -pedantic
 
 LIBS := -lssl -lcrypto
 
 TARGET := secret
 
-SRCS := src/ArgParser.cpp \
-	src/Client.cpp \
-	src/Server.cpp \
-	src/Packet.cpp \
-	src/Channel.cpp \
-	src/Cipher.cpp \
+SRCS := src/Common/ArgParser.cpp \
+	src/App/Client.cpp \
+	src/App/Server.cpp \
+	src/Net/Packet.cpp \
+	src/Net/Channel.cpp \
+	src/Common/Cipher.cpp \
 	main.cpp
 
 OBJS := $(SRCS:.cpp=.o)

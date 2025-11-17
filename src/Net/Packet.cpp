@@ -6,7 +6,7 @@
 #include <cstring>
 #include <unistd.h>
 
-#include "../include/Packet.h"
+#include "../../include/Packet.h"
 
 #include <iostream>
 #include <ostream>
